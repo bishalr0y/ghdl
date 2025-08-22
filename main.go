@@ -4,22 +4,29 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 )
+
+const helpMessage = `
+ghdl - A simple tool to download a file from a raw GitHub URL.
+
+Usage:
+  ghdl <output_filename> <github_url>
+
+Example:
+  ghdl my_file.txt https://raw.githubusercontent.com/username/repo/branch/path/to/file.ext
+`
 
 // curl -o filename.ext https://raw.githubusercontent.com/username/repo/branch/path/to/file.ext
 
 func main() {
 	args := os.Args
 
-	if len(args) == 1 || args[1] == "help" {
-		fmt.Printf("Usage:\n\nghdl output_location github_url\n")
+	if len(args) != 3 || (len(args) > 1 && args[1] == "help") {
+		fmt.Printf(helpMessage)
 		return
 	}
 
-	urlSlice := strings.Split(args[2], "/")
-	filename := urlSlice[len(urlSlice)-1]
-
+	filename := args[1]
 	url := args[2]
 
 	cmd := exec.Command("curl", "-o", filename, url)
@@ -33,3 +40,4 @@ func main() {
 	}
 	fmt.Println(string(output))
 }
+
