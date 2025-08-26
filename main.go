@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,14 +12,25 @@ import (
 )
 
 const helpMessage = `
-ghdl - A simple tool to download a file from a raw GitHub URL.
+ghdl - A tool to download files and directories from GitHub.
 
 Usage:
-  ghdl <output_filename> <github_url>
+  ghdl <github_url> <output_directory>
 
-Example:
-  ghdl my_file.txt https://raw.githubusercontent.com/username/repo/branch/path/to/file.ext
+Example (file):
+  ghdl https://github.com/username/repo/blob/main/path/to/file.ext ./output
+
+Example (directory):
+  ghdl https://github.com/username/repo/tree/main/path/to/dir ./output
 `
+
+// GitHubContent represents a file or directory in a GitHub repository.
+type GitHubContent struct {
+	Type        string `json:"type"`
+	DownloadURL string `json:"download_url"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+}
 
 func main() {
 	args := os.Args
@@ -28,61 +40,110 @@ func main() {
 		return
 	}
 
-	outputFilename := args[1]
-	rawURL := args[2]
+	githubURL := args[1]
+	outputDir := args[2]
 
 	// Validate the URL
-	if err := validateURL(rawURL); err != nil {
+	owner, repo, path, err := parseGitHubURL(githubURL)
+	if err != nil {
 		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
 
-	// Validate the output location
-	if err := validateOutputLocation(outputFilename); err != nil {
+	// Create the output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+		fmt.Println("Error creating output directory:", err)
+		os.Exit(1)
+	}
+
+	// Get the API URL for the content
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, path)
+
+	// Download the content
+	if err := downloadContent(apiURL, outputDir); err != nil {
 		fmt.Println("Error:", err)
 		os.Exit(1)
 	}
 
-	// Download the file
-	if err := downloadFile(outputFilename, rawURL); err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(1)
-	}
-
-	fmt.Println("File downloaded successfully!")
+	fmt.Println("Content downloaded successfully!")
 }
 
-func validateURL(rawURL string) error {
+func parseGitHubURL(rawURL string) (owner, repo, path string, err error) {
 	u, err := url.ParseRequestURI(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+		return "", "", "", fmt.Errorf("invalid URL: %w", err)
 	}
 
 	if u.Scheme != "https" {
-		return fmt.Errorf("invalid URL scheme: must be https")
+		return "", "", "", fmt.Errorf("invalid URL scheme: must be https")
 	}
 
-	if !strings.HasPrefix(u.Host, "raw.githubusercontent.com") {
-		return fmt.Errorf("invalid URL: must be a raw GitHub URL")
+	if u.Host != "github.com" {
+		return "", "", "", fmt.Errorf("invalid URL: must be a github.com URL")
 	}
 
-	return nil
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 4 {
+		return "", "", "", fmt.Errorf("invalid GitHub URL format")
+	}
+
+	owner = parts[0]
+	repo = parts[1]
+
+	pathIndex := 4
+	if len(parts) > 4 && (parts[2] == "tree" || parts[2] == "blob") {
+		pathIndex = 4
+	}
+	path = strings.Join(parts[pathIndex:], "/")
+
+	return owner, repo, path, nil
 }
 
-func validateOutputLocation(outputFilename string) error {
-	dir := filepath.Dir(outputFilename)
-
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		return fmt.Errorf("output directory does not exist: %s", dir)
-	}
-
-	// Check for write permissions by trying to create a temporary file
-	tmpfile, err := os.CreateTemp(dir, "ghdl-")
+func downloadContent(apiURL, outputDir string) error {
+	resp, err := http.Get(apiURL)
 	if err != nil {
-		return fmt.Errorf("no write permissions for output directory: %s", dir)
+		return err
 	}
-	tmpfile.Close()
-	os.Remove(tmpfile.Name())
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("could not get content: %s", resp.Status)
+	}
+
+	var contents []GitHubContent
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		// If it's not a JSON array, it might be a single file
+		var content GitHubContent
+		// We need to "rewind" the body to read it again
+		resp.Body.Close()
+		resp, err = http.Get(apiURL)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if err := json.NewDecoder(resp.Body).Decode(&content); err != nil {
+			return fmt.Errorf("error decoding github api response: %w", err)
+		}
+		contents = []GitHubContent{content}
+	}
+
+	for _, content := range contents {
+		outputPath := filepath.Join(outputDir, content.Name)
+		if content.Type == "file" {
+			if err := downloadFile(outputPath, content.DownloadURL); err != nil {
+				return fmt.Errorf("failed to download file %s: %w", content.Name, err)
+			}
+		} else if content.Type == "dir" {
+			if err := os.MkdirAll(outputPath, os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", outputPath, err)
+			}
+			dirAPIURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", getOwnerFromAPIURL(apiURL), getRepoFromAPIURL(apiURL), content.Path)
+			if err := downloadContent(dirAPIURL, outputPath); err != nil {
+				return err
+			}
+		}
+	}
 
 	return nil
 }
@@ -111,3 +172,18 @@ func downloadFile(filepath string, url string) error {
 	return err
 }
 
+func getOwnerFromAPIURL(apiURL string) string {
+	parts := strings.Split(apiURL, "/")
+	if len(parts) > 4 {
+		return parts[4]
+	}
+	return ""
+}
+
+func getRepoFromAPIURL(apiURL string) string {
+	parts := strings.Split(apiURL, "/")
+	if len(parts) > 5 {
+		return parts[5]
+	}
+	return ""
+}
