@@ -18,10 +18,10 @@ Usage:
   ghdl <github_url> <output_directory>
 
 Example (file):
-  ghdl https://github.com/username/repo/blob/main/path/to/file.ext ./output
+  ghdl https://github.com/username/repo/blob/main/path/to/file.ext ./output_dir
 
 Example (directory):
-  ghdl https://github.com/username/repo/tree/main/path/to/dir ./output
+  ghdl https://github.com/username/repo/tree/main/path/to/dir ./output_dir
 `
 
 // GitHubContent represents a file or directory in a GitHub repository.
@@ -187,3 +187,4 @@ func getRepoFromAPIURL(apiURL string) string {
 	}
 	return ""
 }
+
