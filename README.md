@@ -1,6 +1,6 @@
 # ghdl
 
-A simple command-line tool to download a file from a raw GitHub URL.
+A simple command-line tool to download a file directly from a raw GitHub URL.
 
 ## Installation
 
@@ -11,12 +11,12 @@ go install github.com/bishalr0y/ghdl@latest
 ## Usage
 
 ```bash
-ghdl <output_filename> <github_url>
+ghdl <github_url> <output_filename>
 ```
 
 ## Example
 
 ```bash
-ghdl my_file.txt https://raw.githubusercontent.com/username/repo/branch/path/to/file.ext
+ghdl https://raw.githubusercontent.com/username/repo/branch/path/to/file.ext my_file.txt
 ```
 

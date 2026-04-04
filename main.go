@@ -138,7 +138,12 @@ func downloadContent(apiURL, outputDir string) error {
 			if err := os.MkdirAll(outputPath, os.ModePerm); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", outputPath, err)
 			}
-			dirAPIURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", getOwnerFromAPIURL(apiURL), getRepoFromAPIURL(apiURL), content.Path)
+			dirAPIURL := fmt.Sprintf(
+				"https://api.github.com/repos/%s/%s/contents/%s",
+				getOwnerFromAPIURL(apiURL),
+				getRepoFromAPIURL(apiURL),
+				content.Path,
+			)
 			if err := downloadContent(dirAPIURL, outputPath); err != nil {
 				return err
 			}
@@ -187,4 +192,3 @@ func getRepoFromAPIURL(apiURL string) string {
 	}
 	return ""
 }
-
